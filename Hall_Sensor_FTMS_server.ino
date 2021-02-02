@@ -11,8 +11,8 @@
 // See the following for generating UUIDs:
 // https://www.uuidgenerator.net/
 
-#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define FTMS_UUID        "00001826-0000-1000-8000-00805f9b34fb"
+#define INDOOR_BIKE_DATA_CHARACTERISTIC_UUID "00002ad2-0000-1000-8000-00805f9b34fb"
 #define LED_BUILTIN 2
 
 void setup() {
@@ -21,24 +21,26 @@ void setup() {
   setupHalSensor();  
 }
 
+BLECharacteristic *pCharacteristic;
 void setupBluetoothServer() {
   Serial.begin(115200);
   Serial.println("Starting BLE work!");
-
-  BLEDevice::init("Long name works now");
+  BLEDevice::init("IC Bike");
   BLEServer *pServer = BLEDevice::createServer();
-  BLEService *pService = pServer->createService(SERVICE_UUID);
-  BLECharacteristic *pCharacteristic = pService->createCharacteristic(
-                                         CHARACTERISTIC_UUID,
+  BLEService *pService = pServer->createService(FTMS_UUID);
+  pCharacteristic = pService->createCharacteristic(
+                                         INDOOR_BIKE_DATA_CHARACTERISTIC_UUID,
                                          BLECharacteristic::PROPERTY_READ |
                                          BLECharacteristic::PROPERTY_WRITE
                                        );
 
-  pCharacteristic->setValue("Hello World says James");
+
+
+  pCharacteristic->setValue("Characteristic configured");  // Used for demonstration purposes.
   pService->start();
-  // BLEAdvertising *pAdvertising = pServer->getAdvertising();  // this still is working for backward compatibility
+  // BLEAdvertising *pAdvertising = pServer->getAdvertising();  // add this for backwards compatibility
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->addServiceUUID(FTMS_UUID);
   pAdvertising->setScanResponse(true);
   pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
   pAdvertising->setMinPreferred(0x12);
@@ -52,13 +54,19 @@ void setupHalSensor() {
   Serial.begin(9600);
 }
 
+bool passingMagnet = false;
 void loop() {
   int digitalVal = digitalRead(digitalPin);
   Serial.println(digitalVal);
   if (digitalVal == 1) {
+    passingMagnet = true;
     digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
+    pCharacteristic->setValue("passingMagnet is true");
+  } else if (passingMagnet){ //passed magnet, count a rotation
+    passingMagnet = false;
+    pCharacteristic->setValue("passingMagnet is false");
   } else {
     digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
   }
-  delay(100);
+  delay(10);  //At 25 mph a rotation of the trainer wheel occurs 54/sec.  
 }
