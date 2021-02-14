@@ -17,8 +17,8 @@
 #define LED_BUILTIN 2
 
 bool magStateOld;
-int analogPin = 18;
-int digitalPin = 19;
+int digitalPin = 18;
+int analogPin = 19;
 void setup()
 {
     pinMode(LED_BUILTIN, OUTPUT); // initialize digital pin LED_BUILTIN as an output.
@@ -72,8 +72,8 @@ double calculateRpmFromRevolutions(int revolutions, unsigned long revolutionsTim
 {
     double ROAD_WHEEL_TO_TACH_WHEEL_RATIO = 6.8;
     double instantaneousRpm = revolutions * 60000 / revolutionsTime / ROAD_WHEEL_TO_TACH_WHEEL_RATIO;
-    Serial.printf("revolutionsTime: %d, rev: %d , instantaneousRpm: %2.9f \n",
-                    revolutionsTime, revolutions, instantaneousRpm);
+//    Serial.printf("revolutionsTime: %d, rev: %d , instantaneousRpm: %2.9f \n",
+//                    revolutionsTime, revolutions, instantaneousRpm);
     return instantaneousRpm;
 }
 
@@ -92,7 +92,6 @@ double calculateMphFromRpm(double rpm)
 }
 
 unsigned long distanceTime = 0;
-double runningDistance = 0.0;
 double calculateDistanceFromMph(unsigned long distanceTimeSpan, double mph)
 {
     double incrementalDistance = distanceTimeSpan * mph / 60 / 60 / 1000;
@@ -104,7 +103,6 @@ double calculateDistanceFromMph(unsigned long distanceTimeSpan, double mph)
 double tireValues[] = {0.005, 0.004, 0.012};                      //Clincher, Tubelar, MTB
 double aeroValues[] = {0.388, 0.445, 0.420, 0.300, 0.233, 0.200}; //Hoods, Bartops, Barends, Drops, Aerobar
 unsigned long caloriesTime = 0;
-double runningCalories = 0.0;
 double calculateCaloriesFromMph(unsigned long caloriesTimeSpan, double mph)
 {
     double velocity = mph * 0.44704; // translates to meters/second
@@ -132,7 +130,7 @@ double calculateCaloriesFromMph(unsigned long caloriesTimeSpan, double mph)
     double powerv = (velocity * tres + velocity * tv * tv * A2Eff) / transv;
 
     /* Common calculations */
-    double incrementalCalories = caloriesTimeSpan * powerv * 0.24; // simplified
+    double incrementalCalories = caloriesTimeSpan * powerv * 0.24 / 60000; // simplified
     double wl = incrementalCalories / 32318.0;                     // comes from 1 lb = 3500 Calories
     return incrementalCalories;
 }
@@ -194,26 +192,40 @@ void transmitFTMS(int rpm)
 }
 
 unsigned long elapsedTime = 0;
-unsigned long intervalTime = 0;
+unsigned long elapsedSampleTime = 0;
 int rev = 0;
+double intervalEntries = 0;
+double totalRpm = 0;
+double totalMph = 0;
+double runningCalories = 0.0;
+double runningDistance = 0.0;
 void loop()
 {
-    intervalTime = millis() - elapsedTime;
-    rev += (int)positiveEdge(digitalRead(digitalPin), magStateOld);
-
-//    Serial.printf("outside rev: %d \n", rev);
+    unsigned long intervalTime = millis() - elapsedTime;
+    unsigned long sampleTime = millis() - elapsedSampleTime;
+    bool state = digitalRead(digitalPin);
+    if (sampleTime > 10 && state != magStateOld)
+    {
+        rev += (int)positiveEdge(state, magStateOld);
+        elapsedSampleTime = millis();
+    }
     if (intervalTime > 1000)
     {
-        Serial.printf("rev: %d \n", rev);
         double rpm = calculateRpmFromRevolutions(rev, intervalTime);
-        Serial.printf("rpm: %2.2f \n", rpm);
         double mph = calculateMphFromRpm(rpm);
-        Serial.printf("mph: %2.2f \n", mph);
+        intervalEntries++;
+        totalRpm+=rpm;
+        totalMph+=mph;
+        double avgRpm = totalRpm / intervalEntries;
+        double avgMph = totalMph / intervalEntries;
         runningDistance += calculateDistanceFromMph(intervalTime, mph);
         runningCalories += calculateCaloriesFromMph(intervalTime, mph);
+        Serial.println("----------------------------------------------------");
+        Serial.printf("elapsedTime: %d, rev: %d \n", elapsedTime, rev);
+        Serial.printf("rpm: %2.2f, avgRpm: %2.2f \n", rpm, avgRpm);
+        Serial.printf("mph: %2.2f, avgMph: %2.2f \n", mph, avgMph);
+        Serial.printf("distance: %2.2f, calories:  %2.5f \n", runningDistance, runningCalories);
 
-        Serial.printf("intervalTime: %d, elapsedTime: %d, RPM: %2.2, Revolutions %d , MPH: %2.2f, Distance: %2.2f, Calories: %2.2f \n", 
-                      intervalTime, elapsedTime, rpm, rev, mph, runningDistance, runningCalories);
         indicateRpmWithLight(rpm);
         transmitFTMS(rpm);
         
