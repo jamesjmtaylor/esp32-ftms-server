@@ -217,12 +217,12 @@ void transmitFTMS(int rpm)
     pCharacteristic->setValue(rpm);
 }
 
-unsigned long timeSinceStart = 0;
+unsigned long elapsedTime = 0;
 unsigned long intervalTime = 0;
 int rev = 0;
 void loop()
 {
-    intervalTime = millis() - timeSinceStart;
+    intervalTime = millis() - elapsedTime;
     rev = incrementRevolutions(rev, digitalRead(digitalPin));
 
 //    Serial.printf("outside rev: %d \n", rev);
@@ -236,12 +236,12 @@ void loop()
         runningDistance += calculateDistanceFromMph(intervalTime, mph);
         runningCalories += calculateCaloriesFromMph(intervalTime, mph);
 
-        Serial.printf("intervalTime: %d, timeSinceStart: %d, RPM: %2.2, Revolutions %d , MPH: %2.2f, Distance: %2.2f, Calories: %2.2f \n", 
-                      intervalTime, timeSinceStart, rpm, rev, mph, runningDistance, runningCalories);
+        Serial.printf("intervalTime: %d, elapsedTime: %d, RPM: %2.2, Revolutions %d , MPH: %2.2f, Distance: %2.2f, Calories: %2.2f \n", 
+                      intervalTime, elapsedTime, rpm, rev, mph, runningDistance, runningCalories);
         indicateRpmWithLight(rpm);
         transmitFTMS(rpm);
         
         rev = 0;
-        timeSinceStart = millis();
+        elapsedTime = millis();
     }
 }
