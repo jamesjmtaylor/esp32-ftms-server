@@ -50,6 +50,13 @@ void setupBluetoothServer()
 
 int analogPin = 18;
 int digitalPin = 19;
+void setupHalSensor()
+{
+    //    attachInterrupt(digitalPin, ISR, RISING); //attaching the interrupt
+    pinMode(analogPin, INPUT);
+    pinMode(digitalPin, INPUT);
+    Serial.begin(9600);
+}
 
 //NOTE: ISR is triggered too frequently to be relied upon, even with RISING. RPMs are in the thousands.
 // This variable is used for syncronisation
@@ -67,14 +74,7 @@ int digitalPin = 19;
 //    portEXIT_CRITICAL_ISR(&revMux);
 //}
 
-void setupHalSensor()
-{
-    //    attachInterrupt(digitalPin, ISR, RISING); //attaching the interrupt
-    pinMode(analogPin, INPUT);
-    pinMode(digitalPin, INPUT);
-    Serial.begin(9600);
-}
-
+//incrementRevolutions() used to synchronously update rev rather than using an ISR.
 bool passedMagnet = true;
 int incrementRevolutions(int runningRevCount, bool passingMagnet)
 {
