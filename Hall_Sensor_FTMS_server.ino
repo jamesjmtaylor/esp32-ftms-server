@@ -16,11 +16,15 @@
 #define INDOOR_BIKE_DATA_CHARACTERISTIC_UUID "00002ad2-0000-1000-8000-00805f9b34fb"
 #define LED_BUILTIN 2
 
+bool magStateOld;
+int analogPin = 18;
+int digitalPin = 19;
 void setup()
 {
     pinMode(LED_BUILTIN, OUTPUT); // initialize digital pin LED_BUILTIN as an output.
     setupBluetoothServer();
     setupHalSensor();
+    magStateOld = digitalRead(digitalPin);
 }
 
 BLECharacteristic *pCharacteristic;
@@ -48,8 +52,6 @@ void setupBluetoothServer()
     Serial.println("Characteristic defined! Now you can read it in your phone!");
 }
 
-int analogPin = 18;
-int digitalPin = 19;
 void setupHalSensor()
 {
     //    attachInterrupt(digitalPin, ISR, RISING); //attaching the interrupt
@@ -58,39 +60,13 @@ void setupHalSensor()
     Serial.begin(9600);
 }
 
-//NOTE: ISR is triggered too frequently to be relied upon, even with RISING. RPMs are in the thousands.
-// This variable is used for syncronisation
-// We use it to ensure that the ISR and the loop
-// do not try to access the 'rev' variable
-// at the same time (Causes a Guru Meditation Error)
-//portMUX_TYPE revMux = portMUX_INITIALIZER_UNLOCKED;
-//
-//int rev = 0;
-//void IRAM_ATTR ISR() //interrupt service routine
-//{
-//    portENTER_CRITICAL_ISR(&revMux);
-//    rev++;
-//    Serial.printf("rev: %d \n", rev);
-//    portEXIT_CRITICAL_ISR(&revMux);
-//}
-
 //incrementRevolutions() used to synchronously update rev rather than using an ISR.
-bool passedMagnet = true;
-int incrementRevolutions(int runningRevCount, bool passingMagnet)
+inline bool positiveEdge(bool state, bool& oldState)
 {
-//    Serial.printf("passedMagnet: %d ,  passingMagnet %d , runningRevCount: %d \n", passedMagnet, passingMagnet, runningRevCount);
-    int newRevCount = runningRevCount;
-    if (passedMagnet && passingMagnet)
-    { //Started a new pass of the magnet
-        passedMagnet = false;
-        newRevCount++;
-    }
-    else if (!passedMagnet && !passingMagnet)
-    { //The new pass of the magnet is complete
-        passedMagnet = true;
-    }
-    return newRevCount;
-}
+    bool result = (state && !oldState);
+    oldState = state;
+    return result;
+}  
 
 double calculateRpmFromRevolutions(int revolutions, unsigned long revolutionsTime)
 {
@@ -223,7 +199,7 @@ int rev = 0;
 void loop()
 {
     intervalTime = millis() - elapsedTime;
-    rev = incrementRevolutions(rev, digitalRead(digitalPin));
+    rev += (int)positiveEdge(digitalRead(digitalPin), magStateOld);
 
 //    Serial.printf("outside rev: %d \n", rev);
     if (intervalTime > 1000)
