@@ -7,6 +7,7 @@
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
+#include <BLE2902.h>
 #include <math.h>
 
 // See the following for generating UUIDs:
@@ -16,31 +17,48 @@
 #define INDOOR_BIKE_DATA_CHARACTERISTIC_UUID "00002ad2-0000-1000-8000-00805f9b34fb"
 #define LED_BUILTIN 2
 
-bool magStateOld;
-int digitalPin = 18;
-int analogPin = 19;
+bool deviceConnected = false;
+bool oldDeviceConnected = false;
+class MyServerCallbacks: public BLEServerCallbacks {
+    void onConnect(BLEServer* pServer) {
+      deviceConnected = true;
+    };
+
+    void onDisconnect(BLEServer* pServer) {
+      deviceConnected = false;
+    }
+};
+
 void setup()
 {
     pinMode(LED_BUILTIN, OUTPUT); // initialize digital pin LED_BUILTIN as an output.
     setupBluetoothServer();
     setupHalSensor();
-    magStateOld = digitalRead(digitalPin);
 }
 
-BLECharacteristic *pCharacteristic;
+BLECharacteristic *pCharacteristic = NULL;
+BLEServer* pServer = NULL;
+uint32_t value = 0;
 void setupBluetoothServer()
 {
     Serial.begin(115200);
     Serial.println("Starting BLE work!");
     BLEDevice::init("IC Bike");
-    BLEServer *pServer = BLEDevice::createServer();
+    pServer = BLEDevice::createServer();
+    pServer->setCallbacks(new MyServerCallbacks());
     BLEService *pService = pServer->createService(FTMS_UUID);
     pCharacteristic = pService->createCharacteristic(
         INDOOR_BIKE_DATA_CHARACTERISTIC_UUID,
-        BLECharacteristic::PROPERTY_READ |
-            BLECharacteristic::PROPERTY_WRITE);
+                      BLECharacteristic::PROPERTY_READ   |
+                      BLECharacteristic::PROPERTY_WRITE  |
+                      BLECharacteristic::PROPERTY_NOTIFY |
+                      BLECharacteristic::PROPERTY_INDICATE
+                      );
 
-    pCharacteristic->setValue("Characteristic configured"); // Used for demonstration purposes.
+//    pCharacteristic->setValue("Characteristic configured"); // Used for demonstration purposes.
+  // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.descriptor.gatt.client_characteristic_configuration.xml
+  // Create a BLE Descriptor
+    pCharacteristic->addDescriptor(new BLE2902());
     pService->start();
     // BLEAdvertising *pAdvertising = pServer->getAdvertising();  // add this for backwards compatibility
     BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
@@ -49,15 +67,18 @@ void setupBluetoothServer()
     pAdvertising->setMinPreferred(0x06); // functions that help with iPhone connections issue
     pAdvertising->setMinPreferred(0x12);
     BLEDevice::startAdvertising();
-    Serial.println("Characteristic defined! Now you can read it in your phone!");
+    Serial.println("Waiting for a client connection to notify...");
 }
 
+int digitalPin = 18;
+int analogPin = 19;
+bool magStateOld;
 void setupHalSensor()
 {
-    //    attachInterrupt(digitalPin, ISR, RISING); //attaching the interrupt
     pinMode(analogPin, INPUT);
     pinMode(digitalPin, INPUT);
     Serial.begin(9600);
+    magStateOld = digitalRead(digitalPin);
 }
 
 //incrementRevolutions() used to synchronously update rev rather than using an ISR.
@@ -185,10 +206,27 @@ Metabolic Equivalent Present (bit 10), see Section 4.9.1.14. - Metabolic Equival
 Elapsed Time Present (bit 11), see Section 4.9.1.15. - Elapsed Time Supported (bit 12)
 Remaining Time Present (bit 12), see Section 4.9.1.16. - Remaining Time Supported (bit 13)
  */
-
 void transmitFTMS(int rpm)
 {
-    pCharacteristic->setValue(rpm);
+      // notify changed value
+    if (deviceConnected) {
+//    pCharacteristic->setValue(rpm);
+        pCharacteristic->setValue((uint8_t*)&value, 4);
+        pCharacteristic->notify();
+        value++;
+    }
+    // disconnecting
+    if (!deviceConnected && oldDeviceConnected) {
+        delay(500); // give the bluetooth stack the chance to get things ready
+        pServer->startAdvertising(); // restart advertising
+        Serial.println("start advertising");
+        oldDeviceConnected = deviceConnected;
+    }
+    // connecting
+    if (deviceConnected && !oldDeviceConnected) {
+        // do stuff here on connecting
+        oldDeviceConnected = deviceConnected;
+    }
 }
 
 unsigned long elapsedTime = 0;
@@ -227,6 +265,7 @@ void loop()
         Serial.printf("distance: %2.2f, calories:  %2.5f \n", runningDistance, runningCalories);
 
         indicateRpmWithLight(rpm);
+         // bluetooth stack will go become congested if too many packets are sent. In 6 hour test I was able to go as low as 3ms
         transmitFTMS(rpm);
         
         rev = 0;
