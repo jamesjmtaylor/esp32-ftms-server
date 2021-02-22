@@ -43,7 +43,6 @@ void setup()
 BLECharacteristic *fitnessMachineFeaturesCharacteristic = NULL;
 BLECharacteristic *indoorBikeDataCharacteristic = NULL;
 BLEServer *pServer = NULL;
-uint32_t value = 0;
 void setupBluetoothServer()
 {
     Serial.begin(115200);
@@ -200,26 +199,6 @@ void flushBits (void)
     writeBit (0);
 }
 /* 
-Fitness Machine Features Characteristic (Mandatory for FTMS)
-Bit Number Definition 0=false, 1=true
-0 - Average Speed Supported
-1 - Cadence Supported
-2 - Total Distance Supported
-3 - Inclination Supported
-4 - Elevation Gain Supported
-5 - Pace Supported
-6 - Step Count Supported
-7 - Resistance Level Supported
-8 - Stride Count Supported
-9 - Expended Energy Supported
-10 - Heart Rate Measurement Supported
-11 - Metabolic Equivalent Supported
-12 - Elapsed Time Supported
-13 - Remaining Time Supported
-14 - Power Measurement Supported
-15 - Force on Belt and Power Output Supported
-16 - User Data Retention Supported
-17-31 - Reserved for Future Use
 
 Indoor Bike Data characteristic
 First bit refers to Characteristics bit, parentheses bit refers to corresponding Features Characteristic
@@ -236,16 +215,17 @@ Heart Rate Present (bit 9, see Section 4.9.1.13. - Heart Rate Measurement Suppor
 Metabolic Equivalent Present (bit 10), see Section 4.9.1.14. - Metabolic Equivalent Supported (bit 11)
 Elapsed Time Present (bit 11), see Section 4.9.1.15. - Elapsed Time Supported (bit 12)
 Remaining Time Present (bit 12), see Section 4.9.1.16. - Remaining Time Supported (bit 13)
- */
+ */ 
+byte features[]={0x00,0x00,0xe0,0x48}; //Corresponds to avgSpeed (0), cadence (1), total distance (2), expended energy (9), elapsed time (12)
 void transmitFTMS(int rpm)
 {
     // notify changed value
+        uint32_t test = 1;
     if (deviceConnected)
     {
-        byte test[]={0xb4,0xaf,0x98,0x1a};
-        indoorBikeDataCharacteristic->setValue((uint8_t *)&value, 4);
+        byte bikeData[]={0xb4,0xaf,0x98,0x1a};
+        indoorBikeDataCharacteristic->setValue((uint8_t *)&test, 4);
         indoorBikeDataCharacteristic->notify();
-        value++;
     }
     // disconnecting
     if (!deviceConnected && oldDeviceConnected)
@@ -259,8 +239,8 @@ void transmitFTMS(int rpm)
     if (deviceConnected && !oldDeviceConnected)
     {
         oldDeviceConnected = deviceConnected;
-        // One time notification of supported features
-        fitnessMachineFeaturesCharacteristic->setValue((uint8_t *)&value, 4);
+         // One time notification of supported features
+        fitnessMachineFeaturesCharacteristic->setValue((uint8_t *)&features, 4);
         fitnessMachineFeaturesCharacteristic->notify();
     }
 }
