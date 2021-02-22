@@ -14,18 +14,22 @@
 // https://www.uuidgenerator.net/
 
 #define FTMS_UUID "00001826-0000-1000-8000-00805f9b34fb"
+#define FITNESS_MACHINE_FEATURES_UUID "00002acc-0000-1000-8000-00805f9b34fb"
 #define INDOOR_BIKE_DATA_CHARACTERISTIC_UUID "00002ad2-0000-1000-8000-00805f9b34fb"
 #define LED_BUILTIN 2
 
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
-class MyServerCallbacks: public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) {
-      deviceConnected = true;
+class MyServerCallbacks : public BLEServerCallbacks
+{
+    void onConnect(BLEServer *pServer)
+    {
+        deviceConnected = true;
     };
 
-    void onDisconnect(BLEServer* pServer) {
-      deviceConnected = false;
+    void onDisconnect(BLEServer *pServer)
+    {
+        deviceConnected = false;
     }
 };
 
@@ -36,8 +40,9 @@ void setup()
     setupHalSensor();
 }
 
-BLECharacteristic *pCharacteristic = NULL;
-BLEServer* pServer = NULL;
+BLECharacteristic *fitnessMachineFeaturesCharacteristic = NULL;
+BLECharacteristic *indoorBikeDataCharacteristic = NULL;
+BLEServer *pServer = NULL;
 uint32_t value = 0;
 void setupBluetoothServer()
 {
@@ -47,18 +52,21 @@ void setupBluetoothServer()
     pServer = BLEDevice::createServer();
     pServer->setCallbacks(new MyServerCallbacks());
     BLEService *pService = pServer->createService(FTMS_UUID);
-    pCharacteristic = pService->createCharacteristic(
+    fitnessMachineFeaturesCharacteristic = pService->createCharacteristic(
+        FITNESS_MACHINE_FEATURES_UUID,
+        BLECharacteristic::PROPERTY_READ |
+            BLECharacteristic::PROPERTY_WRITE |
+            BLECharacteristic::PROPERTY_NOTIFY |
+            BLECharacteristic::PROPERTY_INDICATE);
+    indoorBikeDataCharacteristic = pService->createCharacteristic(
         INDOOR_BIKE_DATA_CHARACTERISTIC_UUID,
-                      BLECharacteristic::PROPERTY_READ   |
-                      BLECharacteristic::PROPERTY_WRITE  |
-                      BLECharacteristic::PROPERTY_NOTIFY |
-                      BLECharacteristic::PROPERTY_INDICATE
-                      );
-
-//    pCharacteristic->setValue("Characteristic configured"); // Used for demonstration purposes.
-  // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.descriptor.gatt.client_characteristic_configuration.xml
-  // Create a BLE Descriptor
-    pCharacteristic->addDescriptor(new BLE2902());
+        BLECharacteristic::PROPERTY_READ |
+            BLECharacteristic::PROPERTY_WRITE |
+            BLECharacteristic::PROPERTY_NOTIFY |
+            BLECharacteristic::PROPERTY_INDICATE);
+    //  BLE2803 and BLE2902 are the UUIDs for Characteristic Declaration (0x2803) and Descriptor Declaration (0x2902).
+    fitnessMachineFeaturesCharacteristic->addDescriptor(new BLE2902());
+    indoorBikeDataCharacteristic->addDescriptor(new BLE2902());
     pService->start();
     // BLEAdvertising *pAdvertising = pServer->getAdvertising();  // add this for backwards compatibility
     BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
@@ -82,19 +90,19 @@ void setupHalSensor()
 }
 
 //incrementRevolutions() used to synchronously update rev rather than using an ISR.
-inline bool positiveEdge(bool state, bool& oldState)
+inline bool positiveEdge(bool state, bool &oldState)
 {
     bool result = (state && !oldState);
     oldState = state;
     return result;
-}  
+}
 
 double calculateRpmFromRevolutions(int revolutions, unsigned long revolutionsTime)
 {
     double ROAD_WHEEL_TO_TACH_WHEEL_RATIO = 6.8;
     double instantaneousRpm = revolutions * 60000 / revolutionsTime / ROAD_WHEEL_TO_TACH_WHEEL_RATIO;
-//    Serial.printf("revolutionsTime: %d, rev: %d , instantaneousRpm: %2.9f \n",
-//                    revolutionsTime, revolutions, instantaneousRpm);
+    //    Serial.printf("revolutionsTime: %d, rev: %d , instantaneousRpm: %2.9f \n",
+    //                    revolutionsTime, revolutions, instantaneousRpm);
     return instantaneousRpm;
 }
 
@@ -107,8 +115,8 @@ double calculateMphFromRpm(double rpm)
     double metricDistance = rpm * circumfrence;
     double imperialDistance = metricDistance * KM_TO_MI;
     double mph = imperialDistance * 60; // feet -> miles and minutes -> hours
-//    Serial.printf("rpm: %2.2f, circumfrence: %2.2f, metricDistance %2.5f , imperialDistance: %2.5f, mph: %2.2f \n",
-//                   rpm, circumfrence, metricDistance, imperialDistance, mph);
+                                        //    Serial.printf("rpm: %2.2f, circumfrence: %2.2f, metricDistance %2.5f , imperialDistance: %2.5f, mph: %2.2f \n",
+                                        //                   rpm, circumfrence, metricDistance, imperialDistance, mph);
     return mph;
 }
 
@@ -116,8 +124,8 @@ unsigned long distanceTime = 0;
 double calculateDistanceFromMph(unsigned long distanceTimeSpan, double mph)
 {
     double incrementalDistance = distanceTimeSpan * mph / 60 / 60 / 1000;
-//    Serial.printf("mph: %2.2f, distanceTimeSpan %d , incrementalDistance: %2.9f \n",
-//                   mph, distanceTimeSpan, incrementalDistance);
+    //    Serial.printf("mph: %2.2f, distanceTimeSpan %d , incrementalDistance: %2.9f \n",
+    //                   mph, distanceTimeSpan, incrementalDistance);
     return incrementalDistance;
 }
 
@@ -152,7 +160,7 @@ double calculateCaloriesFromMph(unsigned long caloriesTimeSpan, double mph)
 
     /* Common calculations */
     double incrementalCalories = caloriesTimeSpan * powerv * 0.24 / 60000; // simplified
-    double wl = incrementalCalories / 32318.0;                     // comes from 1 lb = 3500 Calories
+    double wl = incrementalCalories / 32318.0;                             // comes from 1 lb = 3500 Calories
     return incrementalCalories;
 }
 
@@ -168,6 +176,29 @@ void indicateRpmWithLight(int rpm)
     }
 }
 
+//See https://stackoverflow.com/questions/1856514/writing-files-in-bit-form-to-a-file-in-c?rq=1
+int current_bit = 0;
+unsigned char bit_buffer;
+FILE *f;
+void writeBit (int bit)
+{
+  if (bit)
+    bit_buffer |= (1<<current_bit);
+
+  current_bit++;
+  if (current_bit == 8)
+  {
+    fwrite (&bit_buffer, 1, 1, f);
+    current_bit = 0;
+    bit_buffer = 0;
+  }
+}
+
+void flushBits (void)
+{
+  while (current_bit) 
+    writeBit (0);
+}
 /* 
 Fitness Machine Features Characteristic (Mandatory for FTMS)
 Bit Number Definition 0=false, 1=true
@@ -208,24 +239,29 @@ Remaining Time Present (bit 12), see Section 4.9.1.16. - Remaining Time Supporte
  */
 void transmitFTMS(int rpm)
 {
-      // notify changed value
-    if (deviceConnected) {
-//    pCharacteristic->setValue(rpm);
-        pCharacteristic->setValue((uint8_t*)&value, 4);
-        pCharacteristic->notify();
+    // notify changed value
+    if (deviceConnected)
+    {
+        byte test[]={0xb4,0xaf,0x98,0x1a};
+        indoorBikeDataCharacteristic->setValue((uint8_t *)&value, 4);
+        indoorBikeDataCharacteristic->notify();
         value++;
     }
     // disconnecting
-    if (!deviceConnected && oldDeviceConnected) {
-        delay(500); // give the bluetooth stack the chance to get things ready
+    if (!deviceConnected && oldDeviceConnected)
+    {
+        delay(500);                  // give the bluetooth stack the chance to get things ready
         pServer->startAdvertising(); // restart advertising
         Serial.println("start advertising");
         oldDeviceConnected = deviceConnected;
     }
     // connecting
-    if (deviceConnected && !oldDeviceConnected) {
-        // do stuff here on connecting
+    if (deviceConnected && !oldDeviceConnected)
+    {
         oldDeviceConnected = deviceConnected;
+        // One time notification of supported features
+        fitnessMachineFeaturesCharacteristic->setValue((uint8_t *)&value, 4);
+        fitnessMachineFeaturesCharacteristic->notify();
     }
 }
 
@@ -252,8 +288,8 @@ void loop()
         double rpm = calculateRpmFromRevolutions(rev, intervalTime);
         double mph = calculateMphFromRpm(rpm);
         intervalEntries++;
-        totalRpm+=rpm;
-        totalMph+=mph;
+        totalRpm += rpm;
+        totalMph += mph;
         double avgRpm = totalRpm / intervalEntries;
         double avgMph = totalMph / intervalEntries;
         runningDistance += calculateDistanceFromMph(intervalTime, mph);
@@ -265,9 +301,9 @@ void loop()
         Serial.printf("distance: %2.2f, calories:  %2.5f \n", runningDistance, runningCalories);
 
         indicateRpmWithLight(rpm);
-         // bluetooth stack will go become congested if too many packets are sent. In 6 hour test I was able to go as low as 3ms
+        // bluetooth stack will go become congested if too many packets are sent. In 6 hour test I was able to go as low as 3ms
         transmitFTMS(rpm);
-        
+
         rev = 0;
         elapsedTime = millis();
     }
