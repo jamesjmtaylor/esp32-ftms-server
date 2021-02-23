@@ -215,8 +215,26 @@ Heart Rate Present (bit 9, see Section 4.9.1.13. - Heart Rate Measurement Suppor
 Metabolic Equivalent Present (bit 10), see Section 4.9.1.14. - Metabolic Equivalent Supported (bit 11)
 Elapsed Time Present (bit 11), see Section 4.9.1.15. - Elapsed Time Supported (bit 12)
 Remaining Time Present (bit 12), see Section 4.9.1.16. - Remaining Time Supported (bit 13)
- */ 
-byte features[]={0x00,0x00,0xe0,0x48}; //Corresponds to avgSpeed (0), cadence (1), total distance (2), expended energy (9), elapsed time (12)
+ */
+byte littleToBigEndian(byte littleEndian)
+{
+    unsigned int v = littleEndian; // input bits to be reversed
+    unsigned int r = v; // r will be reversed bits of v; first get LSB of v
+    int s = sizeof(v) * CHAR_BIT - 1; // extra shift needed at end
+    
+    for (v >>= 1; v; v >>= 1)
+    {   
+      r <<= 1;
+      r |= v & 1;
+      s--;
+    }
+    r <<= s;
+    return r;
+}
+
+//The bits are reversed.  1110 0000 (0xe0) 0100 1000 (0x48) reads to Android as 0000 0111 (0x07) 0001 0010 (0x12).  
+//This is because ESP32 is little-endian, ARM is big-endian
+byte features[]={0xe0}; //Corresponds to avgSpeed (0), cadence (1), total distance (2), expended energy (9), elapsed time (12)
 void transmitFTMS(int rpm)
 {
     // notify changed value
@@ -240,7 +258,8 @@ void transmitFTMS(int rpm)
     {
         oldDeviceConnected = deviceConnected;
          // One time notification of supported features
-        fitnessMachineFeaturesCharacteristic->setValue((uint8_t *)&features, 4);
+        byte reversed = littleToBigEndian(features);
+        fitnessMachineFeaturesCharacteristic->setValue((byte*)&reversed, 4);
         fitnessMachineFeaturesCharacteristic->notify();
     }
 }
