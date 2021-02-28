@@ -175,31 +175,7 @@ void indicateRpmWithLight(int rpm)
     }
 }
 
-//See https://stackoverflow.com/questions/1856514/writing-files-in-bit-form-to-a-file-in-c?rq=1
-int current_bit = 0;
-unsigned char bit_buffer;
-FILE *f;
-void writeBit (int bit)
-{
-  if (bit)
-    bit_buffer |= (1<<current_bit);
-
-  current_bit++;
-  if (current_bit == 8)
-  {
-    fwrite (&bit_buffer, 1, 1, f);
-    current_bit = 0;
-    bit_buffer = 0;
-  }
-}
-
-void flushBits (void)
-{
-  while (current_bit) 
-    writeBit (0);
-}
 /* 
-
 Indoor Bike Data characteristic
 First bit refers to Characteristics bit, parentheses bit refers to corresponding Features Characteristic
 More Data present (bit 0), see Sections 4.9.1.2 and 4.19, otherise Instantaneous Speed field present
@@ -216,25 +192,49 @@ Metabolic Equivalent Present (bit 10), see Section 4.9.1.14. - Metabolic Equival
 Elapsed Time Present (bit 11), see Section 4.9.1.15. - Elapsed Time Supported (bit 12)
 Remaining Time Present (bit 12), see Section 4.9.1.16. - Remaining Time Supported (bit 13)
  */
-byte littleToBigEndian(byte littleEndian)
-{
-    unsigned int v = littleEndian; // input bits to be reversed
-    unsigned int r = v; // r will be reversed bits of v; first get LSB of v
-    int s = sizeof(v) * CHAR_BIT - 1; // extra shift needed at end
-    
-    for (v >>= 1; v; v >>= 1)
-    {   
-      r <<= 1;
-      r |= v & 1;
-      s--;
-    }
-    r <<= s;
-    return r;
+static unsigned char lookup[16] = {
+0x0, 0x8, 0x4, 0xc, 0x2, 0xa, 0x6, 0xe,
+0x1, 0x9, 0x5, 0xd, 0x3, 0xb, 0x7, 0xf, };
+
+byte reverse(byte n) 
+{  // Reverse the top and bottom nibble then swap them.
+   return (lookup[n&0b1111] << 4) | lookup[n>>4];
 }
+
+//byte* reverseBytes(byte *bp)
+//{
+//    byte reversed[sizeof(bp)];
+//    for (int i = 0; i < sizeof(bp); i++)
+//    {
+//        reversed[i] = reverse(bp[i]);
+//    }
+//    return reversed;
+//}
+void reverseArray(byte arr[], int start, int end)
+{
+    while (start < end)
+    {
+        int temp = reverse(arr[start]); 
+        arr[start] = arr[end];
+        arr[end] = temp;
+        start++;
+        end--;
+    } 
+}    
+
+// Detailed breakdown of the math
+//  + lookup reverse of bottom nibble
+//  |       + grab bottom nibble
+//  |       |        + move bottom result into top nibble
+//  |       |        |     + combine the bottom and top results 
+//  |       |        |     | + lookup reverse of top nibble
+//  |       |        |     | |       + grab top nibble
+//  V       V        V     V V       V
+// (lookup[n&0b1111] << 4) | lookup[n>>4]
 
 //The bits are reversed.  1110 0000 (0xe0) 0100 1000 (0x48) reads to Android as 0000 0111 (0x07) 0001 0010 (0x12).  
 //This is because ESP32 is little-endian, ARM is big-endian
-byte features[]={0xe0}; //Corresponds to avgSpeed (0), cadence (1), total distance (2), expended energy (9), elapsed time (12)
+byte features[] = {0xe0,0x48}; //Corresponds to avgSpeed (0), cadence (1), total distance (2), expended energy (9), elapsed time (12)
 void transmitFTMS(int rpm)
 {
     // notify changed value
@@ -258,8 +258,9 @@ void transmitFTMS(int rpm)
     {
         oldDeviceConnected = deviceConnected;
          // One time notification of supported features
-        byte reversed = littleToBigEndian(features);
-        fitnessMachineFeaturesCharacteristic->setValue((byte*)&reversed, 4);
+//        byte* rbp = (byte*)reverse(*features);
+        reverseArray(features,0,sizeof(features)-1);
+        fitnessMachineFeaturesCharacteristic->setValue((byte*)&features, 4);
         fitnessMachineFeaturesCharacteristic->notify();
     }
 }
