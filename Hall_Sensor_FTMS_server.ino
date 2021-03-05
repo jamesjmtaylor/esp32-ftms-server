@@ -91,7 +91,7 @@ void setupHalSensor()
 //incrementRevolutions() used to synchronously update rev rather than using an ISR.
 inline bool positiveEdge(bool state, bool &oldState)
 {
-    bool result = (state && !oldState);
+    bool result = (state && !oldState);//latch logic
     oldState = state;
     return result;
 }
@@ -192,73 +192,84 @@ Metabolic Equivalent Present (bit 10), see Section 4.9.1.14. - Metabolic Equival
 Elapsed Time Present (bit 11), see Section 4.9.1.15. - Elapsed Time Supported (bit 12)
 Remaining Time Present (bit 12), see Section 4.9.1.16. - Remaining Time Supported (bit 13)
  */
+
+//Used to convert from little-endian (ESP32) to big-endian (ARM)
+/* Detailed breakdown of the math
+  + lookup reverse of bottom nibble
+  |       + grab bottom nibble
+  |       |        + move bottom result into top nibble
+  |       |        |     + combine the bottom and top results 
+  |       |        |     | + lookup reverse of top nibble
+  |       |        |     | |       + grab top nibble
+  V       V        V     V V       V
+ (lookup[n&0b1111] << 4) | lookup[n>>4]
+*/
 static unsigned char lookup[16] = {
 0x0, 0x8, 0x4, 0xc, 0x2, 0xa, 0x6, 0xe,
 0x1, 0x9, 0x5, 0xd, 0x3, 0xb, 0x7, 0xf, };
-
 byte reverse(byte n) 
-{  // Reverse the top and bottom nibble then swap them.
+{  
    return (lookup[n&0b1111] << 4) | lookup[n>>4];
 }
 
-//byte* reverseBytes(byte *bp)
-//{
-//    byte reversed[sizeof(bp)];
-//    for (int i = 0; i < sizeof(bp); i++)
-//    {
-//        reversed[i] = reverse(bp[i]);
-//    }
-//    return reversed;
-//}
 void reverseArray(byte arr[], int start, int end)
 {
     while (start < end)
     {
-        int temp = reverse(arr[start]); 
-        arr[start] = arr[end];
+        byte temp = reverse(arr[start]); 
+        arr[start] = reverse(arr[end]);
         arr[end] = temp;
         start++;
         end--;
     } 
 }    
 
-// Detailed breakdown of the math
-//  + lookup reverse of bottom nibble
-//  |       + grab bottom nibble
-//  |       |        + move bottom result into top nibble
-//  |       |        |     + combine the bottom and top results 
-//  |       |        |     | + lookup reverse of top nibble
-//  |       |        |     | |       + grab top nibble
-//  V       V        V     V V       V
-// (lookup[n&0b1111] << 4) | lookup[n>>4]
+/*Used for debugging, i.e.
+    Serial.print("Before reverse: ");
+    printArray(features);
+    reverseArray(features,0,sizeof(features)-1);
+    Serial.print("\nAfter reverse: ");
+    printArray(features);
+*/
+void printArray(byte input[])
+{
+    size_t n = sizeof(input)/sizeof(input[0]);
+    // loop through the elements of the array
+    for (size_t i = 0; i < n; i++) 
+    {
+        Serial.print(input[i]);
+        Serial.print(' ');
+    }
+}
 
-//The bits are reversed.  1110 0000 (0xe0) 0100 1000 (0x48) reads to Android as 0000 0111 (0x07) 0001 0010 (0x12).  
-//This is because ESP32 is little-endian, ARM is big-endian
-byte features[] = {0xe0,0x48}; //Corresponds to avgSpeed (0), cadence (1), total distance (2), expended energy (9), elapsed time (12)
+byte features[] = {0x00,0x00,0x48,0xe0}; //Corresponds to avgSpeed (0), cadence (1), total distance (2), expended energy (9), elapsed time (12)
 void transmitFTMS(int rpm)
 {
-    // notify changed value
-        uint32_t test = 1;
+    bool disconnecting = !deviceConnected && oldDeviceConnected;
+    bool connecting = deviceConnected && !oldDeviceConnected;
+        Serial.print("Before reverse: ");
+    printArray(features);
+    reverseArray(features,0,sizeof(features)-1);
+    Serial.print("\nAfter reverse: ");
+    printArray(features);
     if (deviceConnected)
     {
         byte bikeData[]={0xb4,0xaf,0x98,0x1a};
-        indoorBikeDataCharacteristic->setValue((uint8_t *)&test, 4);
+        indoorBikeDataCharacteristic->setValue((uint8_t *)&bikeData, 4);
         indoorBikeDataCharacteristic->notify();
     }
-    // disconnecting
-    if (!deviceConnected && oldDeviceConnected)
+    
+    if (disconnecting) // give the bluetooth stack the chance to get things ready & restart advertising
     {
-        delay(500);                  // give the bluetooth stack the chance to get things ready
-        pServer->startAdvertising(); // restart advertising
+        delay(500);                  
+        pServer->startAdvertising(); 
         Serial.println("start advertising");
         oldDeviceConnected = deviceConnected;
     }
-    // connecting
-    if (deviceConnected && !oldDeviceConnected)
-    {
+    
+    if (connecting) // execute one time notification of supported features
+    { 
         oldDeviceConnected = deviceConnected;
-         // One time notification of supported features
-//        byte* rbp = (byte*)reverse(*features);
         reverseArray(features,0,sizeof(features)-1);
         fitnessMachineFeaturesCharacteristic->setValue((byte*)&features, 4);
         fitnessMachineFeaturesCharacteristic->notify();
@@ -294,7 +305,7 @@ void loop()
         double avgMph = totalMph / intervalEntries;
         runningDistance += calculateDistanceFromMph(intervalTime, mph);
         runningCalories += calculateCaloriesFromMph(intervalTime, mph);
-        Serial.println("----------------------------------------------------");
+        Serial.println("\n----------------------------------------------------");
         Serial.printf("elapsedTime: %d, rev: %d \n", elapsedTime, rev);
         Serial.printf("rpm: %2.2f, avgRpm: %2.2f \n", rpm, avgRpm);
         Serial.printf("mph: %2.2f, avgMph: %2.2f \n", mph, avgMph);
