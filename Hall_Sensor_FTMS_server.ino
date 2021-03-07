@@ -201,8 +201,8 @@ void littleEndianToBigEndian(byte arr[], int end)
     int start = 0;
     while (start < end)
     {
-        byte temp = reverseBits(arr[start]); 
-        arr[start] = reverseBits(arr[end]);
+        byte temp = (arr[start]); 
+        arr[start] = (arr[end]);
         arr[end] = temp;
         start++;
         end--;
@@ -232,8 +232,8 @@ UINT8 array[2];
 array[0]=value & 0xff;
 array[1]=(value >> 8);
  */
-
-byte features[] = {0x00,0x00,0x48,0xe0}; //Corresponds to avgSpeed (0), cadence (1), total distance (2), expended energy (9), elapsed time (12)
+//NOTE: Use Big-endian hex values, littleEndianToBigEndian will make sure they are handled properly
+byte features[] = {0x00,0x00,0x12,0x07}; //Corresponds to avgSpeed (0), cadence (1), total distance (2), expended energy (9), elapsed time (12) OLD: 0x48,0xe0
 void transmitFTMS(int rpm, double avgRpm, double kph, double avgKph, double runningDistance, double runningCalories, unsigned long elapsedTime)
 {
     uint16_t transmittedKph = (uint16_t) (kph * 100);
@@ -251,9 +251,11 @@ void transmitFTMS(int rpm, double avgRpm, double kph, double avgKph, double runn
       0x0A,0x0B, //TODO: uint16_t for avgRpm (0.1 resolution)
       0x0C,0x0D, //TODO: uint16_t for rpm (0.1 resolution)
       0x0E,0x0F, //TODO: uint16_t for avgKph (0.01 resolution)
-      (uint8_t)transmittedKph,(uint8_t)(transmittedKph >> 8), //FIXME: works with minor bit only, major bit seems to cause issues.  May need to debug on Android.
+      (uint8_t)(transmittedKph >> 8),(uint8_t)transmittedKph, //FIXME: works with minor bit only, major bit seems to cause issues.  May need to debug on Android.
+      //NOTE: It may be the case that flags need bits & bytes reversed, but Integers only need bytes reversed.
       0x09,0x1e};
     //0x78,0x90 = instSpeed (0 counts as true here), avgSpeed(1), instCadence (2), avgCadence (3), total distance (4), expended energy (8), elapsed time (11)
+    
     printArray(bikeData, sizeof(bikeData));
     Serial.print("\n");
     littleEndianToBigEndian(bikeData,sizeof(bikeData)-1);
