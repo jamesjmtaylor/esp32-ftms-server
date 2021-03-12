@@ -132,7 +132,7 @@ double calculateDistanceFromKph(unsigned long distanceTimeSpan, double kph)
 double tireValues[] = {0.005, 0.004, 0.012};                      //Clincher, Tubelar, MTB
 double aeroValues[] = {0.388, 0.445, 0.420, 0.300, 0.233, 0.200}; //Hoods, Bartops, Barends, Drops, Aerobar
 unsigned long caloriesTime = 0;
-double calculateCaloriesFromKph(unsigned long caloriesTimeSpan, double kph)
+double calculatePowerFromKph(double kph)
 {
     //double velocity = mph * 0.44704; // translates to meters/second
     double velocity = kph * 0.277778; // translates to meters/second
@@ -157,11 +157,15 @@ double calculateCaloriesFromKph(unsigned long caloriesTimeSpan, double kph)
     // we calculate power from velocity
     double tv = velocity + headwind;      //terminal velocity
     double A2Eff = (tv > 0.0) ? A2 : -A2; // wind in face so you must reverse effect
-    double powerv = (velocity * tres + velocity * tv * tv * A2Eff) / transv;
+    return (velocity * tres + velocity * tv * tv * A2Eff) / transv;    
+}
 
-    /* Common calculations */
-    double incrementalCalories = caloriesTimeSpan * powerv * 0.24 / 60000; // simplified
-    double wl = incrementalCalories / 32318.0;                             // comes from 1 lb = 3500 Calories
+double calculateCaloriesFromPower(unsigned long caloriesTimeSpan, double powerv)
+{
+    double JOULE_TO_KCAL = 0.238902957619;
+    // From the formula: Energy (Joules) = Power (Watts) * Time (Seconds)
+    double incrementalCalories =  powerv * caloriesTimeSpan / 60 / 1000 * JOULE_TO_KCAL; 
+    double wl = incrementalCalories / 32318.0;    // comes from 1 lb = 3500 Calories
     return incrementalCalories;
 }
 
@@ -177,45 +181,9 @@ void indicateRpmWithLight(int rpm)
     }
 }
 
-//Used to convert from little-endian (ESP32) to big-endian (ARM)
-/* Detailed breakdown of the math
-  + lookup reverse of bottom nibble
-  |       + grab bottom nibble
-  |       |        + move bottom result into top nibble
-  |       |        |     + combine the bottom and top results 
-  |       |        |     | + lookup reverse of top nibble
-  |       |        |     | |       + grab top nibble
-  V       V        V     V V       V
- (lookup[n&0b1111] << 4) | lookup[n>>4]
-*/
-static unsigned char lookup[16] = {
-0x0, 0x8, 0x4, 0xc, 0x2, 0xa, 0x6, 0xe,
-0x1, 0x9, 0x5, 0xd, 0x3, 0xb, 0x7, 0xf, };
-byte reverseBits(byte n) 
-{  
-   return (lookup[n&0b1111] << 4) | lookup[n>>4];
-}
-
-void littleEndianToBigEndian(byte arr[], int end)
-{
-    int start = 0;
-    while (start < end)
-    {
-        byte temp = (arr[start]); 
-        arr[start] = (arr[end]);
-        arr[end] = temp;
-        start++;
-        end--;
-    } 
-}    
-
-/*Used for debugging, i.e.
-    Serial.print("Before reverseBits: ");
-    printArray(bikeData, sizeof(bikeData));
-    littleEndianToBigEndian(bikeData,sizeof(bikeDataures)-1);
-    Serial.print("\nAfter reverseBits: ");
-    printArray(bikeData, sizeof(bikeData));
-*/
+//Used for debugging, i.e. `printArray(bikeData, sizeof(bikeData));` 
+//NOTE: sizeOfArray parameter is necessary 
+//This is because `sizeOf()` will return the size of the pointer to the array, not the array
 void printArray(byte input[], int sizeOfArray)
 {
     for (size_t i = 0; i < sizeOfArray; i++) 
@@ -225,44 +193,46 @@ void printArray(byte input[], int sizeOfArray)
     }
 }
 
-/* TODO: use https://www.bluetooth.com/wp-content/uploads/Sitecore-Media-Library/Gatt/Xml/Characteristics/org.bluetooth.characteristic.indoor_bike_data.xml
- *  to convert data to bytes in conjunction with logic below:
-UINT16 value = 0xAAFF;
-UINT8 array[2];
-array[0]=value & 0xff;
-array[1]=(value >> 8);
- */
-//NOTE: Use Big-endian hex values, littleEndianToBigEndian will make sure they are handled properly
-byte features[] = {0x00,0x00,0x12,0x07}; //Corresponds to avgSpeed (0), cadence (1), total distance (2), expended energy (9), elapsed time (12) OLD: 0x48,0xe0
-void transmitFTMS(int rpm, double avgRpm, double kph, double avgKph, double runningDistance, double runningCalories, unsigned long elapsedTime)
+byte features[] = {0x07,0x52,0x00,0x00}; 
+// 0x07,0x52 (0x48,0x4a in big-endian) are flags for
+// avgSpeed (0), cadence (1), total distance (2), expended energy (9), elapsed time (12), power measurement (14)  
+void transmitFTMS(double rpm, double avgRpm, double kph, double avgKph, double power, double avgPower, 
+                  double runningDistance, double runningCalories, unsigned long elapsedTime)
 {
-    uint16_t transmittedKph = (uint16_t) (kph * 100);
-    Serial.printf("transmittedKph: %d\n", transmittedKph);
-    Serial.printf("litte end byte 0: %d\n", (uint8_t)(transmittedKph >> 8));
-    Serial.printf("litte end byte 1: %d\n", (uint8_t)transmittedKph);
+    uint16_t transmittedKph     = (uint16_t) (kph * 100);         //(0.01 resolution)
+    uint16_t transmittedTime    = (uint16_t) (elapsedTime / 1000);//(1.0 resolution) 
+    uint16_t transmittedAvgKph  = (uint16_t) (avgKph * 100);      //(0.01 resolution)
+    uint16_t transmittedRpm     = (uint16_t) (rpm * 2);           //(0.5 resolution)
+    uint16_t transmittedAvgRpm  = (uint16_t) (avgRpm * 2);         //(0.1 resolution)
+    uint16_t transmittedPower   = (uint16_t) (power * 2);      //(1.0 resolution)
+    uint16_t transmittedAvgPower= (uint16_t) (avgPower * 2);        //(1.0 resolution)
+    uint32_t transmittedDistance= (uint32_t) (runningDistance * 1000);// runningDistance in km, need m 
+    uint16_t transmittedTotalCal= (uint16_t) (runningCalories * 10);                   //(1.0 resolution)
+    uint16_t transmittedCalHr   = (uint16_t) (runningCalories * 60 * 60 / elapsedTime);//(1.0 resolution) 
+    uint8_t transmittedCalMin   = (uint8_t)  (runningCalories * 60 / elapsedTime);     //(1.0 resolution)
+    
     bool disconnecting = !deviceConnected && oldDeviceConnected;
     bool connecting = deviceConnected && !oldDeviceConnected;
-    byte bikeData[20]={
-      0x00,0x01, //TODO: uint16_t for elapsed time (seconds)
-      0x02, //TODO: uint8_t for energy (kCal / min)
-      0x03,0x04, //TODO: uint16_t for energy (kCal / hr)
-      0x05,0x06, //TODO: uint16_t for total energy
-      0x07,0x08,0x09, //TODO: uint24_t for distance (meters)
-      0x0A,0x0B, //TODO: uint16_t for avgRpm (0.1 resolution)
-      0x0C,0x0D, //TODO: uint16_t for rpm (0.1 resolution)
-      0x0E,0x0F, //TODO: uint16_t for avgKph (0.01 resolution)
-      (uint8_t)(transmittedKph >> 8),(uint8_t)transmittedKph, //FIXME: works with minor bit only, major bit seems to cause issues.  May need to debug on Android.
-      //NOTE: It may be the case that flags need bits & bytes reversed, but Integers only need bytes reversed.
-      0x09,0x1e};
-    //0x78,0x90 = instSpeed (0 counts as true here), avgSpeed(1), instCadence (2), avgCadence (3), total distance (4), expended energy (8), elapsed time (11)
     
-    printArray(bikeData, sizeof(bikeData));
-    Serial.print("\n");
-    littleEndianToBigEndian(bikeData,sizeof(bikeData)-1);
-    printArray(bikeData, sizeof(bikeData));
+    byte bikeData[22]={0x5e,0x09,
+                    // 0x5e,0x09 (0x7a,0x90 in big-endian) are the flags for
+                    // instSpeed (0 counts as true here), avgSpeed(1), instCadence (2), avgCadence (3), 
+                    // total distance (4), instPower (6), expended energy (8), elapsed time (11)
+                    (uint8_t)transmittedKph,   (uint8_t)(transmittedKph >> 8),
+                    (uint8_t)transmittedAvgKph,(uint8_t)(transmittedAvgKph >> 8),
+                    (uint8_t)transmittedRpm,   (uint8_t)(transmittedRpm >> 8),
+                    (uint8_t)transmittedAvgRpm,(uint8_t)(transmittedAvgRpm >> 8),
+                    (uint8_t)transmittedPower,   (uint8_t)(transmittedPower >> 8), //NOTE: Actually SINT16, but my bike can't peddle backwards
+                    //(uint8_t)transmittedAvgPower,(uint8_t)(transmittedAvgPower >> 8), //NOTE: sending this exceeds the default MTU of 23 bytes
+                    (uint8_t)transmittedDistance,(uint8_t)(transmittedDistance >> 8),(uint8_t)(transmittedDistance >> 16),                    
+                    (uint8_t)transmittedTotalCal,(uint8_t)(transmittedTotalCal >> 8),                    
+                    (uint8_t)transmittedCalHr,(uint8_t)(transmittedCalHr >> 8),                    
+                    transmittedCalMin,
+                    (uint8_t)transmittedTime,  (uint8_t)(transmittedTime >> 8),
+      };
     if (deviceConnected)
     {
-        indoorBikeDataCharacteristic->setValue((uint8_t *)&bikeData, 20);
+        indoorBikeDataCharacteristic->setValue((uint8_t *)&bikeData, 22);
         indoorBikeDataCharacteristic->notify();
     }
     
@@ -277,7 +247,6 @@ void transmitFTMS(int rpm, double avgRpm, double kph, double avgKph, double runn
     if (connecting) // execute one time notification of supported features
     { 
         oldDeviceConnected = deviceConnected;
-        littleEndianToBigEndian(features,sizeof(features)-1);
         fitnessMachineFeaturesCharacteristic->setValue((byte*)&features, 4);
         fitnessMachineFeaturesCharacteristic->notify();
     }
@@ -289,6 +258,7 @@ int rev = 0;
 double intervalEntries = 0;
 double totalRpm = 0;
 double totaKph = 0;
+double totalPower = 0;
 double runningCalories = 0.0;
 double runningDistance = 0.0;
 void loop()
@@ -305,22 +275,29 @@ void loop()
     {
         double rpm = calculateRpmFromRevolutions(rev, intervalTime);
         double kph = calculateKphFromRpm(rpm);
+        double power = calculatePowerFromKph(kph);
+        
         intervalEntries++;
         totalRpm += rpm;
         totaKph += kph;
-        double avgRpm = totalRpm / intervalEntries;
-        double avgKph = totaKph / intervalEntries;
+        totalPower += power;
+        
+        double avgRpm   = totalRpm   / intervalEntries;
+        double avgKph   = totaKph    / intervalEntries;
+        double avgPower = totalPower / intervalEntries;
         runningDistance += calculateDistanceFromKph(intervalTime, kph);
-        runningCalories += calculateCaloriesFromKph(intervalTime, kph);
+        
+        runningCalories += calculateCaloriesFromPower(intervalTime, power);
         Serial.println("\n----------------------------------------------------");
         Serial.printf("elapsedTime: %d, rev: %d \n", elapsedTime, rev);
         Serial.printf("rpm: %2.2f, avgRpm: %2.2f \n", rpm, avgRpm);
         Serial.printf("kph: %2.2f, avgKph: %2.2f \n", kph, avgKph);
+        Serial.printf("power: %2.2f watts, avgPower: %2.2 watts \n", power, avgPower);
         Serial.printf("distance: %2.2f, calories:  %2.5f \n", runningDistance, runningCalories);
 
         indicateRpmWithLight(rpm);
         // bluetooth becomes congested if too many packets are sent. In a 6 hour test I was able to go as frequent as 3ms.
-        transmitFTMS(rpm,avgRpm,kph,avgKph,runningDistance,runningCalories,elapsedTime);
+        transmitFTMS(rpm,avgRpm,kph,avgKph,power,avgPower,runningDistance,runningCalories,elapsedTime);
 
         rev = 0;
         elapsedTime = millis();
