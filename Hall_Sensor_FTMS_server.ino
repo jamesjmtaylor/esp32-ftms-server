@@ -100,7 +100,7 @@ inline bool positiveEdge(bool state, bool &oldState)
 double calculateRpmFromRevolutions(int revolutions, unsigned long revolutionsTime)
 {
     double ROAD_WHEEL_TO_TACH_WHEEL_RATIO = 6.8;
-    double instantaneousRpm = revolutions * 60000 / revolutionsTime / ROAD_WHEEL_TO_TACH_WHEEL_RATIO;
+    double instantaneousRpm = revolutions * 60 * 1000 / revolutionsTime / ROAD_WHEEL_TO_TACH_WHEEL_RATIO;
     //    Serial.printf("revolutionsTime: %d, rev: %d , instantaneousRpm: %2.9f \n",
     //                    revolutionsTime, revolutions, instantaneousRpm);
     return instantaneousRpm;
@@ -214,25 +214,25 @@ void transmitFTMS(double rpm, double avgRpm, double kph, double avgKph, double p
     bool disconnecting = !deviceConnected && oldDeviceConnected;
     bool connecting = deviceConnected && !oldDeviceConnected;
     
-    byte bikeData[22]={0x5e,0x09,
-                    // 0x5e,0x09 (0x7a,0x90 in big-endian) are the flags for
-                    // instSpeed (0 counts as true here), avgSpeed(1), instCadence (2), avgCadence (3), 
+    byte bikeData[20]={0x56,0x09, // these bytes are the flags for
+                    // instSpeed (0 counts as true here), avgSpeed(1), instCadence (2),  
                     // total distance (4), instPower (6), expended energy (8), elapsed time (11)
-                    (uint8_t)transmittedKph,   (uint8_t)(transmittedKph >> 8),
-                    (uint8_t)transmittedAvgKph,(uint8_t)(transmittedAvgKph >> 8),
-                    (uint8_t)transmittedRpm,   (uint8_t)(transmittedRpm >> 8),
-                    (uint8_t)transmittedAvgRpm,(uint8_t)(transmittedAvgRpm >> 8),
-                    (uint8_t)transmittedPower,   (uint8_t)(transmittedPower >> 8), //NOTE: Actually SINT16, but my bike can't peddle backwards
-                    //(uint8_t)transmittedAvgPower,(uint8_t)(transmittedAvgPower >> 8), //NOTE: sending this exceeds the default MTU of 23 bytes
-                    (uint8_t)transmittedDistance,(uint8_t)(transmittedDistance >> 8),(uint8_t)(transmittedDistance >> 16),                    
-                    (uint8_t)transmittedTotalCal,(uint8_t)(transmittedTotalCal >> 8),                    
-                    (uint8_t)transmittedCalHr,(uint8_t)(transmittedCalHr >> 8),                    
+                    (uint8_t)transmittedKph,       (uint8_t)(transmittedKph >> 8),
+                    (uint8_t)transmittedAvgKph,    (uint8_t)(transmittedAvgKph >> 8),
+                    (uint8_t)transmittedRpm,       (uint8_t)(transmittedRpm >> 8),
+                    //(uint8_t)transmittedAvgRpm,    (uint8_t)(transmittedAvgRpm >> 8), //NOTE: commented out to avoid exceeding MTU                   
+                    (uint8_t)transmittedDistance,  (uint8_t)(transmittedDistance >> 8),(uint8_t)(transmittedDistance >> 16),        
+                    (uint8_t)transmittedPower,     (uint8_t)(transmittedPower >> 8), //NOTE: Actually SINT16, but my bike can't peddle backwards
+                    //(uint8_t)transmittedAvgPower,(uint8_t)(transmittedAvgPower >> 8), //NOTE: commented out to avoid exceeding MTU                        
+                    (uint8_t)transmittedTotalCal,  (uint8_t)(transmittedTotalCal >> 8),                    
+                    (uint8_t)transmittedCalHr,     (uint8_t)(transmittedCalHr >> 8),                    
                     transmittedCalMin,
-                    (uint8_t)transmittedTime,  (uint8_t)(transmittedTime >> 8),
+                    (uint8_t)transmittedTime,      (uint8_t)(transmittedTime >> 8)
       };
     if (deviceConnected)
     {
-        indoorBikeDataCharacteristic->setValue((uint8_t *)&bikeData, 22);
+        //NOTE: Even though the ATT_MTU for BLE is 23 bytes, android by default only captures the first 20 bytes.
+        indoorBikeDataCharacteristic->setValue((uint8_t *)&bikeData, 20);
         indoorBikeDataCharacteristic->notify();
     }
     
@@ -271,7 +271,7 @@ void loop()
         rev += (int)positiveEdge(state, magStateOld);
         elapsedSampleTime = millis();
     }
-    if (intervalTime > 1000)
+    if (intervalTime > 500)
     {
         double rpm = calculateRpmFromRevolutions(rev, intervalTime);
         double kph = calculateKphFromRpm(rpm);
