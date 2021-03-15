@@ -99,7 +99,7 @@ inline bool positiveEdge(bool state, bool &oldState)
 
 double calculateRpmFromRevolutions(int revolutions, unsigned long revolutionsTime)
 {
-    double ROAD_WHEEL_TO_TACH_WHEEL_RATIO = 6.8;
+    double ROAD_WHEEL_TO_TACH_WHEEL_RATIO = 20.68;
     double instantaneousRpm = revolutions * 60 * 1000 / revolutionsTime / ROAD_WHEEL_TO_TACH_WHEEL_RATIO;
     //    Serial.printf("revolutionsTime: %d, rev: %d , instantaneousRpm: %2.9f \n",
     //                    revolutionsTime, revolutions, instantaneousRpm);
@@ -266,7 +266,7 @@ void loop()
     unsigned long intervalTime = millis() - elapsedTime;
     unsigned long sampleTime = millis() - elapsedSampleTime;
     bool state = digitalRead(digitalPin);
-    if (sampleTime > 10 && state != magStateOld)
+    if (sampleTime > 5 && state != magStateOld)
     {
         rev += (int)positiveEdge(state, magStateOld);
         elapsedSampleTime = millis();
