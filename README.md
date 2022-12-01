@@ -1,6 +1,8 @@
 # esp32-ftms-server
 
-![Tachometer](./esp32Tach.jpg) This is an ESP-32 based tachometer that I built for my stationary bike stand.  It uses the [Indoor Bike Data characteristic](https://www.bluetooth.com/wp-content/uploads/Sitecore-Media-Library/Gatt/Xml/Characteristics/org.bluetooth.characteristic.indoor_bike_data.xml) of the FTMS BLE service.
+![Tachometer](./esp32Tach.jpg) 
+
+This is an ESP-32 based tachometer that I built for my stationary bike stand.  It uses the [Indoor Bike Data characteristic](https://www.bluetooth.com/wp-content/uploads/Sitecore-Media-Library/Gatt/Xml/Characteristics/org.bluetooth.characteristic.indoor_bike_data.xml) of the FTMS BLE service.
 
 ## Parts List
 
